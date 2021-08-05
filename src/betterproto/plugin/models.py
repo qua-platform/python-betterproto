@@ -161,6 +161,15 @@ def get_comment(
 
     return ""
 
+def get_comment_from_file_descriptor(
+    proto_file: "FileDescriptorProto", path: List[int]
+) -> str:
+    for sci_loc in proto_file.source_code_info.location:
+        if list(sci_loc.path) == path and sci_loc.leading_comments:
+            return sci_loc.leading_comments.strip()
+
+    return ""
+
 
 class ProtoContentBase:
     """Methods common to MessageCompiler, ServiceCompiler and ServiceMethodCompiler."""
@@ -318,6 +327,39 @@ class MessageCompiler(ProtoContentBase):
     def has_deprecated_fields(self) -> bool:
         return any(self.deprecated_fields)
 
+    @property
+    def comment(self) -> str:
+        """Crawl the proto source code and retrieve comments
+        for this object.
+        """
+        if self.is_field:
+            return ""
+        indent = self.comment_indent
+        pad = " " * indent
+        doc = get_comment_from_file_descriptor(proto_file=self.source_file, path=self.path)
+        lines = textwrap.wrap(doc, width=79 - indent)
+        joined = f"\n".join(lines)
+
+        attributes = "\n".join(f.attr_comment for f in self.fields)
+        return f'{pad}"""\n{pad}{joined}\n{pad}\n{pad}Attributes:\n{attributes}\n{pad}"""'
+
+    @property
+    def attr_comment(self) -> str:
+        """Crawl the proto source code and retrieve comments
+        for this object but as a field.
+        """
+        if not self.is_field:
+            return ""
+        indent = self.comment_indent + 4
+        pad = " " * indent
+        doc = get_comment_from_file_descriptor(proto_file=self.source_file, path=self.path)
+        lines = textwrap.wrap(doc, width=79 - indent)
+        joined = f"\n{pad}".join(lines)
+        return f'{pad}{self.py_name} ({self.annotation}):{joined}'
+
+    @property
+    def is_field(self) -> bool:
+        return self.path[-2] == 2 and self.path[-4] != 6
 
 def is_map(
     proto_field_obj: FieldDescriptorProto, parent_message: DescriptorProto
